@@ -1,0 +1,17 @@
+[project]
+name = "incident-agent"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+  "langchain>=0.2.0",
+  "langgraph>=0.2.0",
+  "langchain-ollama>=0.1.0",
+  "pydantic>=2.7.0",
+  "python-dotenv>=1.0.1",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
