@@ -1,8 +1,8 @@
 import json
 from typing import Dict, Any, List
-from ..state import AgentSate
+from ..state import AgentState
 
-def ingest_file(state: AgentSate) -> AgentSate:
+def ingest_file(state: AgentState) -> AgentState:
     path = state.get("log_path") or ""
     n = int(state.get("window_lines") or 200)
 

@@ -8,10 +8,10 @@ def notify_stdout(state: AgentState) -> AgentState:
         return state
     
     print("\n !! INCIDENT DETECTED")
-    print(f"Severity: {state.get("severity")}")
-    print(f"Error Count: {state.get("error_count")}")
-    print(f"Affected Services: {state.get("services")}")
-    print(f"Top Events: {state.get("top_events")}")
+    print(f"Severity: {state.get('severity')}")
+    print(f"Error Count: {state.get('error_count')}")
+    print(f"Affected Services: {state.get('services')}")
+    print(f"Top Events: {state.get('top_events')}")
 
     print("\n--- Summary ---")
     print(state.get("summary", ""))
