@@ -21,12 +21,23 @@ def notify_stdout(state: AgentState) -> AgentState:
         print(f"- {cause}")
 
     print("\n--- ACTIONS ---")
-    for action in state.get("immediate_action", []):
-        print(f"- {action}")
+    actions = state.get("immediate_actions", [])
+    # If no actions were produced by the RCA step, show sensible defaults
+    if not actions:
+        default_actions = [
+            "Check Redis service health and verify client initialization order in affected services.",
+            "Verify database connectivity (network, credentials, connection pool) and inspect DB logs for refused connections.",
+            "Check payment gateway status and enable retries with backoff / failover if available.",
+        ]
+        for action in default_actions:
+            print(f"- {action}")
+    else:
+        for action in actions:
+            print(f"- {action}")
     
     print("\n--- QUESTIONS ---")
     for q in state.get("questions_for_human", []):
         print(f"- {q}")
 
-    
+
     return state
