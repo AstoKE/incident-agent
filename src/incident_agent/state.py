@@ -22,3 +22,7 @@ class AgentState(TypedDict, total=False):
 
     last_n_raw: List[str]
     note: Optional[str]
+
+    incident_fingerprint: str
+    last_incident_fingerprint: str
+    should_notify: str

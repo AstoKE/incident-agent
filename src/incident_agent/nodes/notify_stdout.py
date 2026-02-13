@@ -8,6 +8,9 @@ def notify_stdout(state: AgentState) -> AgentState:
         return state
     
     print("\n !! INCIDENT DETECTED")
+    if state.get("is_incident") and not state.get("should_notify", True):
+        print("\nℹ️ Incident detected but deduped (no new notification).")
+
     print(f"Severity: {state.get('severity')}")
     print(f"Error Count: {state.get('error_count')}")
     print(f"Affected Services: {state.get('services')}")
