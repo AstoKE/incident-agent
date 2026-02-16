@@ -11,18 +11,27 @@ def _make_fingerprint(state: AgentState) -> str:
 
 
 def dedupe_incident(state: AgentState) -> AgentState:
+    print("DEBUG in dedupe immediate_actions:", state.get("immediate_actions"))
+
     if not state.get("is_incident"):
-        state["should_notify"]=False
-        return state
-    
-    fp = _make_fingerprint(state)
-    state["incident_fingerprint"] =fp
+        return {
+            **state,
+            "should_notify": False,
+        }
 
-    last_fp = state.get("last_incident_fingerprint")
-    if last_fp == fp:
-        state["should_notify"]=False
-    else:
-        state["should_notify"]= True
-        state["last_incident_fingerprint"] = fp
+    fingerprint = f"{state.get('severity')}-{state.get('top_events')}"
+    last = state.get("last_incident_fingerprint")
 
-    return state
+    if fingerprint == last:
+        return {
+            **state,
+            "incident_fingerprint": fingerprint,
+            "should_notify": False,
+        }
+
+    return {
+        **state,
+        "incident_fingerprint": fingerprint,
+        "last_incident_fingerprint": fingerprint,
+        "should_notify": True,
+    }

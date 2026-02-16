@@ -8,6 +8,9 @@ import urllib.request
 from pathlib import Path  
 from typing import Dict, Any, Tuple, Optional
 
+import tarfile
+import zipfile
+
 LOGHUB_README_RAW = "https://raw.githubusercontent.com/logpai/loghub/master/README.md"
 DEFAULT_OUT_DIR = Path("data") / "loghub"
 
@@ -18,6 +21,7 @@ def http_get_text(url: str, timeout: int = 30) -> str:
     
 
 def http_download(url: str, out_path: Path, timeout: int=60) -> None:
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     req= urllib.request.Request(url, headers={"User-Agent": "incident-agent-loghub-downloader/1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as resp, open(out_path, "wb")as f:
@@ -27,6 +31,29 @@ def http_download(url: str, out_path: Path, timeout: int=60) -> None:
                 break
             f.write(chunk)
 
+def extract_if_archive(path: Path, out_dir: Path) -> None:
+    #extract zip or tar archives into out_dir
+
+    name= path.name.lower()
+
+    if name.endswith(".zip"):
+        with zipfile.ZipFile(path, "r") as zf:
+            zf.extractall(out_dir)
+        return
+    
+    if name.endswith(".tar.gz") or name.endswith(".tgz") or name.endswith(".tar"):
+        with tarfile.open(path, "r:*") as tf:
+            tf.extractall(out_dir)
+
+        return
+    
+def find_log_files(root: Path) -> list[Path]:
+    exts = {".log", ".txt", ".csv", ".json", ".jsonl"}
+    files: list[Path] = []
+    for p in root.rglob("*"):
+        if p.is_file() and (p.suffix.lower() in exts or "log" in p.name.lower()):
+            files.append(p)
+        return sorted(files, key=lambda x: x.stat().st_size, reverse=True)
 
 def parse_dataset_links(readme_md: str) -> Dict[str, str]:
     
@@ -73,6 +100,9 @@ def main() -> int:
     ap.add_argument("--dataset", type=str, default=None, help="Dataset name to download (exact match from --list).")
     ap.add_argument("--out", type=str, default=str(DEFAULT_OUT_DIR), help="Output directory (default: data/loghub).")
     ap.add_argument("--readme-url", type=str, default=LOGHUB_README_RAW, help="LogHub README raw URL.")
+    ap.add_argument("--extract", action="store_true", help="Extract archives after download.")
+    ap.add_argument("--pick-largest", action="store_true", help="After extract, print the largest log-like file path.")
+
     args = ap.parse_args()
 
     print(f"Fetching LogHub index: {args.readme_url}")
@@ -108,6 +138,24 @@ def main() -> int:
 
     http_download(url, out_path)
     print("✅ Download complete.")
+    
+    if args.extract:
+        print("Extracting...")
+        extract_if_archive(out_path, out_dir)
+        print("✅ Extract complete.")
+
+        logs = find_log_files(out_dir)
+        if logs:
+            print("\nFound log-like files (top 10 by size):")
+            for p in logs[:10]:
+                print(f"- {p} ({p.stat().st_size / (1024*1024):.1f} MB)")
+
+            if args.pick_largest:
+                print("\nSuggested LOG_PATH:")
+                print(str(logs[0]))
+        else:
+            print("No log-like files found after extraction.")
+
     return 0
 
 

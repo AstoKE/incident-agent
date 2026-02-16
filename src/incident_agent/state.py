@@ -10,19 +10,18 @@ class AgentState(TypedDict, total=False):
     services: List[str]
     top_events: List[str]
 
-    #decisions
     is_incident: bool
     severity: str
 
-    #llm outputs
     summary: str
     likely_root_causes: List[str]
-    immediate_action: List[str]
+    immediate_actions: List[str]          
     questions_for_human: List[str]
+
+    # dedupe fields
+    incident_fingerprint: str
+    last_incident_fingerprint: str
+    should_notify: bool
 
     last_n_raw: List[str]
     note: Optional[str]
-
-    incident_fingerprint: str
-    last_incident_fingerprint: str
-    should_notify: str

@@ -13,8 +13,12 @@ def notify_stdout(state: AgentState) -> AgentState:
 
     print(f"Severity: {state.get('severity')}")
     print(f"Error Count: {state.get('error_count')}")
-    print(f"Affected Services: {state.get('services')}")
-    print(f"Top Events: {state.get('top_events')}")
+    
+    services = state.get("services") or []
+    events = state.get("top_events") or []
+
+    print(f"Affected Services: {', '.join(services) if services else 'None'}")
+    print(f"Top Events: {', '.join(events) if events else 'None'}")
 
     print("\n--- Summary ---")
     print(state.get("summary", ""))
@@ -27,13 +31,7 @@ def notify_stdout(state: AgentState) -> AgentState:
     actions = state.get("immediate_actions", [])
     # If no actions were produced by the RCA step, show sensible defaults
     if not actions:
-        default_actions = [
-            "Check Redis service health and verify client initialization order in affected services.",
-            "Verify database connectivity (network, credentials, connection pool) and inspect DB logs for refused connections.",
-            "Check payment gateway status and enable retries with backoff / failover if available.",
-        ]
-        for action in default_actions:
-            print(f"- {action}")
+        print("(none)")
     else:
         for action in actions:
             print(f"- {action}")

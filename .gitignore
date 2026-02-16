@@ -48,3 +48,14 @@ logs/
 # --------------------
 *.db
 *.sql*
+
+
+data/loghub/
+data/**/*.tar.gz
+data/**/*.zip
+data/**/*.log
+
+
+*.tar.gz
+*.zip
+*.log

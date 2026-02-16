@@ -121,11 +121,8 @@ def _fallback_from_text(text: str) -> RCAResult:
     bullets = [l[2:].strip() for l in lines if l.startswith("- ")]
     root_causes = bullets[:3]
 
-    actions = [
-        "Check Redis availability and client initialization in affected services.",
-        "Verify database connectivity (credentials, network, connection pool).",
-        "Check external payment gateway status and retry/backoff configuration.",
-    ]
+    actions = []
+
 
     return RCAResult(
         summary=summary,
@@ -171,6 +168,7 @@ def rca_with_llm(state: AgentState) -> AgentState:
 
     human = HumanMessage(
         content=(
+            f"Primary incident category: {state.get('top_events')[0]}\n"
             f"Severity: {state.get('severity')}\n"
             f"Error count (window): {state.get('error_count')}\n"
             f"Affected services: {state.get('services')}\n"
@@ -212,19 +210,29 @@ def rca_with_llm(state: AgentState) -> AgentState:
             actions=[],
             questions=[f"LLM error: {type(e).__name__}"],
         )
+    top_events = [e.strip().lower() for e in (state.get("top_events", []) or [])]
 
-    # Guardrail: actions must not be empty
-    actions = result.actions or [
-        "Check Redis service health and verify client initialization order in affected services.",
-        "Verify database connectivity (network, credentials, connection pool) and inspect DB logs for refused connections.",
-        "Check payment gateway status and enable retries with backoff / failover if available.",
-    ]
+    if any("authentication_failed" in e for e in top_events):
+        result.actions = [
+            "Inspect SSH logs for repeated failed attempts and identify source IPs.",
+            "Enable or verify fail2ban (or equivalent) to block suspicious IP addresses.",
+            "Harden SSH configuration: disable password auth, enforce key-based login, restrict allowed users.",
+        ]
 
+    # Guardrail: ensure actions not empty
+    if not result.actions:
+        result.actions = [
+            "Investigate affected services and inspect recent configuration changes.",
+            "Check infrastructure health (CPU, memory, disk, network).",
+            "Review related logs for correlated failures.",
+        ]
+
+  
     return {
         **state,
-        "rca_raw": raw,  # debug; remove later if you want
         "summary": result.summary,
         "likely_root_causes": result.root_causes[:3],
-        "immediate_actions": actions[:3],
+        "immediate_actions": result.actions[:3],
         "questions_for_human": result.questions[:3],
     }
+
