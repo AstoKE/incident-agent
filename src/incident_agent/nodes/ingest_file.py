@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from typing import Dict, Any, List
 from ..state import AgentState
 import re
@@ -34,41 +35,49 @@ def infer_event(msg: str) -> str:
     return "generic_issue"
 
 def ingest_file(state: AgentState) -> AgentState:
-    path = state.get("log_path") or ""
+    # 1) default log path
+    path_str = (state.get("log_path") or "data/sample.log.jsonl").strip()
     n = int(state.get("window_lines") or 200)
 
-    raw_lines: List[str] = []
-    logs:List[Dict[str, any]] = []
+    # 2) resolve path robustly (works no matter where you run from)
+    p = Path(path_str)
 
-    with open(path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f.readlines()[-n:]:
-            line = line.strip()
-            if not line:
-                continue
-            raw_lines.append(line)
-            try:
-                logs.append(json.loads(line))
-            except Exception:
-                m = SYSLOG_RE.match(line)
-                if m:
-                    msg = m.group("msg")
-                    proc = m.group("proc")
-                    logs.append({
-                        "ts": m.group("ts"),
-                        "service": proc,
-                        "level": infer_level(msg),
-                        "event": infer_event(msg),
-                        "message": msg,
-                    })
-                else:
-                    logs.append({
-                        "level": infer_level(line),
-                        "message": line,
-                        "service": "unknown",
-                        "event": infer_event(line),
-                    })
+    if not p.is_absolute():
+        # this file: .../src/incident_agent/nodes/ingest_file.py
+        # parents[2] -> .../src
+        # src.parent -> project root
+        project_root = Path(__file__).resolve().parents[3]  # .../incident-agent
+        p = (project_root / p).resolve()
+
+    if not p.exists():
+        raise FileNotFoundError(
+            f"Log file not found: {p}\n"
+            f"Hint: set state['log_path'] to an absolute path or run from project root."
+        )
+
+    raw_lines: List[str] = []
+    logs: List[Dict[str, Any]] = []
+
+    # 3) memory-friendly: don't read whole file if huge (but OK for now)
+    with p.open("r", encoding="utf-8") as f:
+        lines = f.read().splitlines()[-n:]
+
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        raw_lines.append(line)
+        try:
+            logs.append(json.loads(line))
+        except Exception:
+            logs.append({
+                "level": "INFO",
+                "message": line,
+                "service": "unknown",
+                "event": "raw_line"
+            })
 
     state["recent_logs"] = logs
     state["last_n_raw"] = raw_lines
-    state["note"] = f"Read last {len(raw_lines)} lines from {path}"
+    state["note"] = f"Read last {len(raw_lines)} lines from {str(p)}"
     return state
