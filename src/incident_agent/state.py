@@ -1,5 +1,6 @@
 from __future__ import annotations
-from typing import TypedDict, List, Dict,Any, Optional
+from typing import TypedDict, List, Dict, Any, Optional
+
 
 class AgentState(TypedDict, total=False):
     log_path: str
@@ -13,12 +14,15 @@ class AgentState(TypedDict, total=False):
     is_incident: bool
     severity: str
 
+    # RAG: similar past incidents retrieved before RCA
+    similar_past_incidents: List[Dict[str, Any]]
+
     summary: str
     likely_root_causes: List[str]
-    immediate_actions: List[str]          
+    immediate_actions: List[str]
     questions_for_human: List[str]
 
-    # dedupe fields
+    # dedup fields
     incident_fingerprint: str
     last_incident_fingerprint: str
     should_notify: bool

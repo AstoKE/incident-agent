@@ -1,0 +1,57 @@
+services:
+  agent:
+    build: .
+    restart: unless-stopped
+    environment:
+      LOG_PATH: /data/logs/sample.log.jsonl
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1}
+      OLLAMA_BASE_URL: http://ollama:11434
+      ERROR_THRESHOLD: ${ERROR_THRESHOLD:-5}
+      WINDOW_LINES: ${WINDOW_LINES:-200}
+      DEDUP_WINDOW_SECONDS: ${DEDUP_WINDOW_SECONDS:-600}
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-30}
+      CHROMA_HOST: chromadb
+      CHROMA_PORT: 8000
+    volumes:
+      # Mount your real log directory here; falls back to the bundled sample
+      - ${LOG_DIR:-./data}:/data/logs:ro
+    depends_on:
+      ollama:
+        condition: service_started
+      chromadb:
+        condition: service_healthy
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # GPU passthrough (uncomment if you have NVIDIA drivers + nvidia-container-toolkit)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  chromadb:
+    image: chromadb/chroma:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      ANONYMIZED_TELEMETRY: "false"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  ollama_data:
+  chroma_data:
