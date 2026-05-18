@@ -13,13 +13,24 @@ services:
       CHROMA_HOST: chromadb
       CHROMA_PORT: 8000
     volumes:
-      # Mount your real log directory here; falls back to the bundled sample
       - ${LOG_DIR:-./data}:/data/logs:ro
+      - incident_data:/app/data
     depends_on:
       ollama:
         condition: service_started
       chromadb:
         condition: service_healthy
+
+  dashboard:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "incident_agent.api"]
+    ports:
+      - "8080:8080"
+    volumes:
+      - incident_data:/app/data:ro
+    depends_on:
+      - agent
 
   ollama:
     image: ollama/ollama:latest
@@ -55,3 +66,4 @@ services:
 volumes:
   ollama_data:
   chroma_data:
+  incident_data:
