@@ -73,7 +73,7 @@ python scripts/generate_complex_logs.py
 
 The agent implements a small state graph built in `src/incident_agent/graph.py`. The graph nodes (functions) are in `src/incident_agent/nodes/` and run in sequence:
 
-- `ingest` (`nodes/ingest_file.py`): read the last N log lines and parse JSONL entries
+- `ingest` (`nodes/ingest_file.py`): read the last N log lines and parseJSONL entries
 - `detect` (`nodes/detect.py`): count ERROR/CRITICAL entries, compute affected services, top events, and set `is_incident` and `severity`
 - `dedupe` (`nodes/dedup.py`): generate a fingerprint for the incident and avoid duplicate notifications
 - Conditional route: if the incident is new and `should_notify` is true the graph goes to `rca`, otherwise it goes straight to `notify`
