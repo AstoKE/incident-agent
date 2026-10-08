@@ -4,14 +4,16 @@ ChromaDB helper for incident history (RAG).
 Stores resolved incidents as embeddings so the RCA node can retrieve
 similar past incidents for better-contextualised analysis.
 
-Uses ChromaDB's built-in OllamaEmbeddingFunction — same model already
-configured, no extra dependencies needed. Falls back gracefully when
-Ollama or ChromaDB are unavailable.
+Uses ChromaDB's built-in OllamaEmbeddingFunction with a dedicated embedding
+model (OLLAMA_EMBED_MODEL). Each embedding model gets its own collection,
+because vectors from different models have different dimensions and cannot
+be mixed. Falls back gracefully when Ollama or ChromaDB are unavailable.
 """
 from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
@@ -23,8 +25,13 @@ from .config import (
     CHROMA_HOST,
     CHROMA_PORT,
     OLLAMA_BASE_URL,
-    OLLAMA_MODEL,
+    OLLAMA_EMBED_MODEL,
 )
+
+
+def _collection_name() -> str:
+    # e.g. "qwen3-embedding:0.6b" -> "incident_history__qwen3-embedding-0.6b"
+    return "incident_history__" + re.sub(r"[^a-zA-Z0-9._-]", "-", OLLAMA_EMBED_MODEL).strip("-.")
 
 logger = logging.getLogger(__name__)
 
@@ -42,16 +49,13 @@ def _get_collection() -> chromadb.Collection | None:
         else:
             _client = chromadb.PersistentClient(path=CHROMA_DATA_DIR)
 
-        ef = OllamaEmbeddingFunction(
-            url=f"{OLLAMA_BASE_URL}/api/embeddings",
-            model_name=OLLAMA_MODEL,
-        )
+        ef = OllamaEmbeddingFunction(url=OLLAMA_BASE_URL, model_name=OLLAMA_EMBED_MODEL)
         _collection = _client.get_or_create_collection(
-            name="incident_history",
+            name=_collection_name(),
             embedding_function=ef,
             metadata={"hnsw:space": "cosine"},
         )
-        logger.info("ChromaDB collection 'incident_history' ready")
+        logger.info("ChromaDB collection '%s' ready", _collection.name)
         return _collection
     except Exception as exc:
         logger.warning("ChromaDB unavailable, RAG disabled: %s", exc)

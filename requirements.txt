@@ -1,8 +1,10 @@
-langchain>=0.2.0
-langgraph>=0.2.0
-langchain-ollama>=0.1.0
+langchain>=1.0.0
+langgraph>=1.0.0
+langchain-ollama>=1.0.0
 pydantic>=2.7.0
 python-dotenv>=1.0.1
-chromadb>=0.5.0
+chromadb>=1.0.0
 fastapi>=0.100.0
 uvicorn[standard]>=0.18.0
+# Desktop UI (src/incident_agent/ui_qt) — optional for the CLI/dashboard
+PySide6>=6.7.0

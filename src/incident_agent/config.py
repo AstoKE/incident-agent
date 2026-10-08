@@ -3,12 +3,27 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def _optional_bool(name: str, default: str) -> bool | None:
+    """Parse true/false env vars; an empty value means "let the model decide" (None)."""
+    raw = os.getenv(name, default).strip().lower()
+    if raw == "":
+        return None
+    return raw in ("1", "true", "yes", "on")
+
+
 LOG_PATH = os.getenv("LOG_PATH", "./data/sample.log.jsonl")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
+
+# Ollama — chat model for RCA, separate (small) model for RAG embeddings
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b")
+OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "qwen3-embedding:0.6b")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+# Thinking mode for reasoning models (qwen3.x). false = faster, true = slower but deeper RCA.
+OLLAMA_REASONING = _optional_bool("OLLAMA_REASONING", "false")
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
+
 ERROR_THRESHOLD = int(os.getenv("ERROR_THRESHOLD", "5"))
 WINDOW_LINES = int(os.getenv("WINDOW_LINES", "200"))
-DEDUP_WINDOW_SECONDS = int(os.getenv("DEDUP_WINDOW_SECONDS", "600"))
 POLL_INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL_SECONDS", "30"))
 
 # ChromaDB — leave CHROMA_HOST empty to use a local persistent store

@@ -4,11 +4,12 @@ services:
     restart: unless-stopped
     environment:
       LOG_PATH: /data/logs/sample.log.jsonl
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:9b}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-qwen3-embedding:0.6b}
+      OLLAMA_REASONING: ${OLLAMA_REASONING:-false}
       OLLAMA_BASE_URL: http://ollama:11434
       ERROR_THRESHOLD: ${ERROR_THRESHOLD:-5}
       WINDOW_LINES: ${WINDOW_LINES:-200}
-      DEDUP_WINDOW_SECONDS: ${DEDUP_WINDOW_SECONDS:-600}
       POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-30}
       CHROMA_HOST: chromadb
       CHROMA_PORT: 8000

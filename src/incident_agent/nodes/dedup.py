@@ -17,7 +17,7 @@ def dedupe_incident(state: AgentState) -> AgentState:
             "should_notify": False,
         }
 
-    fingerprint = f"{state.get('severity')}-{state.get('top_events')}"
+    fingerprint = _make_fingerprint(state)
     last = state.get("last_incident_fingerprint")
 
     if fingerprint == last:

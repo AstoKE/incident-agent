@@ -47,6 +47,7 @@ logs/
 # Databases / Local state
 # --------------------
 *.db
+.chromadb/
 *.sql*
 
 

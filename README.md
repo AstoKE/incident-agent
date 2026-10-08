@@ -1,110 +1,147 @@
 # incident-agent
 
-Lightweight incident detection and RCA agent that reads recent logs, detects error spikes, deduplicates incidents, and (optionally) runs an LLM-powered RCA step.
+A local incident detection and root-cause-analysis (RCA) agent. It watches a log file, detects error spikes, looks up similar past incidents, and asks a local LLM for a structured RCA (summary, root causes, actions, open questions).
+
+Built with **LangGraph** (workflow), **LangChain + Ollama** (local LLM), and **ChromaDB** (incident memory / RAG). Everything runs on your machine, so no API keys are needed.
+
+> New to LangGraph/LangChain? Read [docs/LANGGRAPH_REHBERI.md](docs/LANGGRAPH_REHBERI.md) (Turkish), a walkthrough of this codebase's graph, nodes, state and RAG.
 
 ## Features
-- Windowed log ingestion from a JSONL log file
-- Simple rule-based incident detection (error threshold)
-- Deduplication of repeated incidents by fingerprint
-- Optional RCA step using an LLM (via Ollama) to produce summary, root causes and actions
+- Reads the last N lines of a log file: JSONL, syslog, or plain text
+- Rule-based incident detection (ERROR/CRITICAL count vs. threshold) with MEDIUM/HIGH severity
+- RAG: retrieves similar past incidents from ChromaDB and feeds them to the LLM
+- LLM-based RCA with JSON-constrained output, schema validation, and rule-based fallbacks
+- Deduplication so the same incident isn't reported twice in a row
+- Three front-ends: CLI daemon, web dashboard (FastAPI), and desktop app (Qt)
 
-## Prerequisites
-- Python 3.10+
-- Git (optional)
-- An LLM runtime if you want automated RCA (the code uses Ollama via `langchain_ollama`)
+## How it works
 
-## Setup
-1. Create a virtual environment and activate it (recommended):
+The pipeline is a LangGraph state graph ([graph.py](src/incident_agent/graph.py)). Nodes live in [nodes/](src/incident_agent/nodes/) and share the state defined in [state.py](src/incident_agent/state.py).
 
-```bash
+```
+ingest → detect ─┬─ no incident ───────────────────────────────→ notify → END
+                 └─ incident → rag_retrieve → rca → dedupe → notify → rag_store → END
+```
+
+| Node | File | What it does |
+|---|---|---|
+| `ingest` | [ingest_file.py](src/incident_agent/nodes/ingest_file.py) | Tail the last `WINDOW_LINES` lines; parse JSONL, syslog, or raw text |
+| `detect` | [detect.py](src/incident_agent/nodes/detect.py) | Count ERROR/CRITICAL; `is_incident` if ≥ `ERROR_THRESHOLD`, `HIGH` if ≥ 3× |
+| `rag_retrieve` | [rag_retrieve.py](src/incident_agent/nodes/rag_retrieve.py) | Fetch the 3 most similar past incidents from ChromaDB |
+| `rca` | [rca_llm.py](src/incident_agent/nodes/rca_llm.py) | Ask the LLM for JSON RCA; validate with Pydantic; fall back to playbook actions if the LLM gives none |
+| `dedupe` | [dedup.py](src/incident_agent/nodes/dedup.py) | Fingerprint severity + services + events; suppress repeats |
+| `notify` | [notify_stdout.py](src/incident_agent/nodes/notify_stdout.py) | Print the report |
+| `rag_store` | [rag_store.py](src/incident_agent/nodes/rag_store.py) | Save new incidents to ChromaDB and `data/incidents.jsonl` |
+
+[app.py](src/incident_agent/app.py) runs the graph in a loop, re-running whenever the log file changes (polled every `POLL_INTERVAL_SECONDS`).
+
+## Models
+
+| Purpose | Default | Notes |
+|---|---|---|
+| RCA (chat) | `qwen3.5:9b` | ~6.6 GB, fits fully in a 12 GB GPU |
+| RAG embeddings | `qwen3-embedding:0.6b` | ~0.6 GB, used only to vectorize incidents |
+
+You can swap models with `OLLAMA_MODEL` in `.env`. Some options:
+- `qwen3.5:4b`: faster, for GPUs with 6–8 GB VRAM
+- `qwen3.8:27b`: newest Qwen, stronger reasoning, but 18 GB. It needs ~20 GB VRAM to run fully on GPU; otherwise it spills to CPU and each RCA takes minutes.
+- `llama3.1`: older default. Set `OLLAMA_REASONING=` (empty) because it has no thinking mode.
+
+Changing `OLLAMA_EMBED_MODEL` starts a fresh ChromaDB collection, because vectors from different embedding models are incompatible.
+
+## Setup (Windows / PowerShell)
+
+Prerequisites: Python 3.10+ and [Ollama](https://ollama.com/download).
+
+```powershell
+# 1. Virtual environment + dependencies
 python -m venv .venv
-source .venv/bin/activate
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+pip install --no-deps -e .
+
+# 2. Config
+Copy-Item .env.example .env
+
+# 3. Models (Ollama must be running — it starts automatically after install)
+ollama pull qwen3.5:9b
+ollama pull qwen3-embedding:0.6b
+
+# 4. Sample logs
+python scripts\generate_complex_logs.py
 ```
 
-2. Install dependencies:
+<details>
+<summary>macOS / Linux</summary>
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
+pip install --no-deps -e .
+cp .env.example .env
+ollama pull qwen3.5:9b
+ollama pull qwen3-embedding:0.6b
+python scripts/generate_complex_logs.py
+```
+</details>
+
+`pip install -e .` makes `incident_agent` importable, so you don't need to set `PYTHONPATH=src`.
+
+## Running
+
+```powershell
+# Agent daemon (watches LOG_PATH, Ctrl+C to stop)
+python -m incident_agent.app
+
+# Web dashboard: http://localhost:8080 (run in a second terminal)
+python -m incident_agent.api
+
+# Desktop app: pick a log file and analyze it interactively
+python -m incident_agent.ui_qt.app_qt
 ```
 
-3. (Optional) Create a `.env` file in the repository root to override defaults. See `Configuration` below for keys you can set.
+### Docker
+
+```bash
+docker compose up -d
+scripts/setup_models.sh            # pulls qwen3.5:9b + qwen3-embedding:0.6b into the ollama container
+```
+
+This starts the agent, the dashboard (port 8080), Ollama, and ChromaDB. For GPU acceleration, uncomment the `deploy` block under `ollama` in [docker-compose.yml](docker-compose.yml).
 
 ## Configuration
-Configuration is read from environment variables (via `python-dotenv`). Useful variables:
 
-- `LOG_PATH` — path to the log file (default: `./data/sample.log.jsonl`)
-- `OLLAMA_MODEL` — Ollama model name for RCA (default: `llama3.1`)
-- `ERROR_THRESHOLD` — number of errors in the window to mark an incident (default: `5`)
-- `WINDOW_LINES` — how many recent lines to read from the log file (default: `200`)
-- `DEDUP_WINDOW_SECONDS` — deduplication window in seconds (default: `600`)
+All settings are environment variables, read from `.env` (see [.env.example](.env.example)).
 
-Example `.env`:
+| Variable | Default | Description |
+|---|---|---|
+| `LOG_PATH` | `./data/sample.log.jsonl` | Log file to watch |
+| `OLLAMA_MODEL` | `qwen3.5:9b` | Chat model for RCA |
+| `OLLAMA_EMBED_MODEL` | `qwen3-embedding:0.6b` | Embedding model for RAG |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server |
+| `OLLAMA_REASONING` | `false` | Thinking mode for qwen3.x (`true` = slower, deeper). Empty for models without thinking. |
+| `OLLAMA_NUM_CTX` | `8192` | LLM context window (tokens) |
+| `ERROR_THRESHOLD` | `5` | ERROR/CRITICAL count that triggers an incident (3× → HIGH) |
+| `WINDOW_LINES` | `200` | How many recent lines to analyze |
+| `POLL_INTERVAL_SECONDS` | `30` | Daemon polling interval |
+| `CHROMA_HOST` / `CHROMA_PORT` | empty / `8000` | Remote ChromaDB; leave host empty for a local store |
+| `CHROMA_DATA_DIR` | `./.chromadb` | Local ChromaDB directory |
 
-```text
-LOG_PATH=./data/sample.log.jsonl
-ERROR_THRESHOLD=10
-WINDOW_LINES=300
-OLLAMA_MODEL=llama3.1
-```
+## Sample data
+- `scripts/generate_complex_logs.py` writes synthetic JSONL logs (including a payments outage) to `data/sample.log.jsonl`.
+- `scripts/download_loghub.py` downloads real-world log datasets from [LogHub](https://github.com/logpai/loghub). Point `LOG_PATH` at one of them; syslog-format lines are parsed automatically.
 
-## Running the agent
-
-You can run the agent directly. From the repository root use either:
-
-```bash
-# Option A: run module with src on PYTHONPATH
-PYTHONPATH=src python -m incident_agent.app
-
-
-```
-
-The agent will read the last `WINDOW_LINES` from the configured `LOG_PATH`, run detection, optionally call the LLM for RCA, and print results to stdout.
-
-## Generating or downloading sample logs
-- To generate sample logs for local testing, run:
-
-```bash
-python scripts/generate_complex_logs.py
-```
-
-- To download example datasets (if supported), check `scripts/download_loghub.py`.
-
-## How the agent works (high-level)
-
-The agent implements a small state graph built in `src/incident_agent/graph.py`. The graph nodes (functions) are in `src/incident_agent/nodes/` and run in sequence:
-
-- `ingest` (`nodes/ingest_file.py`): read the last N log lines and parseJSONL entries
-- `detect` (`nodes/detect.py`): count ERROR/CRITICAL entries, compute affected services, top events, and set `is_incident` and `severity`
-- `dedupe` (`nodes/dedup.py`): generate a fingerprint for the incident and avoid duplicate notifications
-- Conditional route: if the incident is new and `should_notify` is true the graph goes to `rca`, otherwise it goes straight to `notify`
-- `rca` (`nodes/rca_llm.py`): optional LLM-based RCA step. Uses Ollama via `langchain_ollama` to request structured JSON with `summary`, `root_causes`, `actions`, `questions`.
-- `notify` (`nodes/notify_stdout.py`): prints a human-readable notification summary to stdout
-
-The graph entry point and orchestration live in `src/incident_agent/app.py` and the agent state shape is defined in `src/incident_agent/state.py`.
-
-## Extending the agent
-- Add new processing steps by creating a function in `src/incident_agent/nodes/` and adding a node/edge in `src/incident_agent/graph.py`.
-- Swap or customize the RCA step by replacing `nodes/rca_llm.py` or adding additional handlers to `graph.py`.
+## Extending
+- **New step:** write a function `(state) -> state` in `nodes/`, then register it with `add_node` / `add_edge` in `graph.py`. If it needs new state fields, add them to `state.py`.
+- **Different LLM provider:** replace `ChatOllama` in `rca_llm.py` with any LangChain chat model (`ChatOpenAI`, `ChatAnthropic`, …).
 
 ## Troubleshooting
-- If you see JSON parsing errors from logs, ensure your `LOG_PATH` file contains valid JSONL or plain text lines (the ingest node tolerates non-JSON lines).
-- If RCA fails, check that Ollama is running and the `OLLAMA_MODEL` is available; the code falls back to a heuristic parser when the LLM output is not structured JSON.
-
-## Quick commands
-
-```bash
-# generate sample logs
-python scripts/generate_complex_logs.py
-
-# run the agent
-PYTHONPATH=src python -m incident_agent.app
-
-# run with a custom log
-LOG_PATH=/path/to/log.jsonl PYTHONPATH=src python -m incident_agent.app
-```
+- **`LLM error: ResponseError` / model not found:** run `ollama list` and make sure `OLLAMA_MODEL` and `OLLAMA_EMBED_MODEL` are pulled.
+- **`does not support thinking`:** the model has no thinking mode. Set `OLLAMA_REASONING=` (empty).
+- **RCA is very slow:** the model doesn't fit in VRAM. Check with `ollama ps` (the `PROCESSOR` column should be `100% GPU`) and pick a smaller model.
+- **`Log file not found`:** generate sample logs or fix `LOG_PATH`. Relative paths resolve from the project root.
+- **"RAG disabled" warning:** ChromaDB or the embedding model is unavailable. The agent keeps working without history.
 
 ## License
-This project includes a `LICENSE` file in the repository root.
-
----
-If you'd like, I can also add a simple systemd unit or a small looped runner script to run this agent continuously. Want that next?
+See [LICENSE](LICENSE).

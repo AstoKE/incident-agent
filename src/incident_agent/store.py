@@ -6,16 +6,18 @@ The API server reads this file to power the dashboard.
 """
 from __future__ import annotations
 
-import fcntl
 import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
-logger = logging.getLogger(__name__)
+try:
+    import fcntl  # POSIX only
+except ImportError:  # Windows: single writer (the agent), so a plain append is enough
+    fcntl = None
 
-_INCIDENTS_FILE = Path("data/incidents.jsonl")
+logger = logging.getLogger(__name__)
 
 
 def _incidents_path() -> Path:
@@ -47,9 +49,11 @@ def save_incident(state: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with open(path, "a", encoding="utf-8") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
+            if fcntl:
+                fcntl.flock(f, fcntl.LOCK_EX)
             f.write(json.dumps(record) + "\n")
-            fcntl.flock(f, fcntl.LOCK_UN)
+            if fcntl:
+                fcntl.flock(f, fcntl.LOCK_UN)
     except Exception as exc:
         logger.warning("Failed to persist incident: %s", exc)
 

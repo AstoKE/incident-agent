@@ -11,7 +11,7 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from ..state import AgentState
-from ..config import OLLAMA_MODEL, OLLAMA_BASE_URL
+from ..config import OLLAMA_MODEL, OLLAMA_BASE_URL, OLLAMA_REASONING, OLLAMA_NUM_CTX
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +103,8 @@ def _build_past_incidents_block(past: List[Dict[str, Any]]) -> str:
 # ---------------------------------------------------------------------------
 
 def _extract_json_object(text: str) -> Optional[dict]:
+    # Reasoning models may inline <think>...</think> before the answer
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
     fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
     if fence:
         try:
@@ -198,13 +200,18 @@ _GENERIC_ACTIONS = [
 
 
 def _apply_guardrails(result: RCAResult, top_events: List[str]) -> RCAResult:
-    events_str = " ".join(top_events).lower()
-    for keyword, actions in _EVENT_ACTIONS.items():
-        if keyword in events_str:
-            result.actions = actions
-            return result
-    if not result.actions:
-        result.actions = _GENERIC_ACTIONS
+    """Fill in actions only when the LLM produced none.
+
+    top_events is ordered by frequency, so the dominant event picks the playbook.
+    """
+    if result.actions:
+        return result
+    for event in top_events:
+        for keyword, actions in _EVENT_ACTIONS.items():
+            if keyword in event:
+                result.actions = actions
+                return result
+    result.actions = _GENERIC_ACTIONS
     return result
 
 
@@ -242,7 +249,14 @@ def rca_with_llm(state: AgentState) -> AgentState:
     if past_block:
         human_content += f"\n{past_block}\n"
 
-    llm = ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL, temperature=0.2)
+    llm = ChatOllama(
+        model=OLLAMA_MODEL,
+        base_url=OLLAMA_BASE_URL,
+        temperature=0.2,
+        format="json",               # constrain output to valid JSON
+        reasoning=OLLAMA_REASONING,  # thinking goes to a separate field, not into content
+        num_ctx=OLLAMA_NUM_CTX,      # room for 40 log lines + past incidents
+    )
 
     result = RCAResult(
         summary="Incident detected. (RCA not generated yet.)",
