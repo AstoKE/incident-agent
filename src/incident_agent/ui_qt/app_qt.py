@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
 # ✅ Burayı repo'ndaki gerçek graph builder'a göre ayarla:
 # Örn: from incident_agent.graph import build_graph
 from incident_agent.graph import build_graph  # <-- gerekirse ismi değiştir
+from incident_agent.config import OLLAMA_MODEL
 
 
 def resource_path(relative: str) -> str:
@@ -188,7 +189,7 @@ class AnalyzeWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("incident-agent (ollama 3.1)")
+        self.setWindowTitle(f"incident-agent ({OLLAMA_MODEL})")
 
         # ✅ App icon (pencere icon)
         try:
@@ -478,7 +479,14 @@ class MainWindow(QMainWindow):
 
 
 def main():
+    # Windows groups taskbar buttons by AppUserModelID; without our own ID the
+    # window is grouped under python.exe and shows the Python logo.
+    if sys.platform == "win32":
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("cmpe442.incident-agent")
+
     app = QApplication([])
+    app.setWindowIcon(QIcon(resource_path("assets/app.ico")))
     w = MainWindow()
     w.show()
     app.exec()
